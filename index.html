@@ -5,121 +5,40 @@
     <title>WASM Playground</title>
 </head>
 <body>
-    <script src="libwabt.js"></script>
     <script type="module">
 
         if (!("WebAssembly" in window)) {
             throw new Error("WebAssembly not supported.");
         }
 
-        if (!("wabt" in window)) {
-            throw new Error("wabt needs to be loaded.");
-        }
-
-        wabt.ready.then(() => {
-
-            //var wrappedConsole = Object.create(console);
-            //wrappedConsole.log = (...args) => {
-            //    let line = args.map(String).join('') + '\n';
-            //    jsLogEl.textContent += line;
-            //    console.log(...args);
-            //}
-
-            function compile(name, wast) {
-                let binaryOutput;
-                let module = null;
-                try {
-                    module = wabt.parseWat(name, wast);
-                    module.resolveNames();
-                    module.validate();
-
-                    binaryOutput = module.toBinary({log: true});
-
-                    //const blob = new Blob([binaryOutput.buffer]);
-                    //if (binaryBlobUrl) {
-                    //    URL.revokeObjectURL(binaryBlobUrl);
-                    //}
-                    //binaryBlobUrl = URL.createObjectURL(blob);
-                    //downloadLink.setAttribute('href', binaryBlobUrl);
-                    //downloadEl.classList.remove('disabled');
-                } catch (e) {
-                    console.error(e);
-                    //outputEl.textContent += e.toString();
-                    //downloadEl.classList.add('disabled');
-                } finally {
-                    if (module) module.destroy();
-                    return binaryOutput;
-                }
-            }
-
-            const importObj = {
-                js: {
-                    import1() { console.log("hello, "); },
-                    import2() { console.log("world!"); },
-                    memory : new WebAssembly.Memory({ initial: 1 }),
-                    table : new WebAssembly.Table({ initial: 2, element: "anyfunc" })
+        const mem = new WebAssembly.Memory({ initial: 1 });
+        const env = {
+            console: {
+                log(offset, length) {
+                    const bytes = new Uint8Array(env.js.mem.buffer, offset, length);
+                    const string = new TextDecoder("utf8").decode(bytes);
+                    console.log(string);
                 },
-            };
+            },
+            js: {
+                global: new WebAssembly.Global({
+                    value: "i32",
+                    mutable: true,
+                }, 100),
+                mem,
+            },
+        };
 
-            async function run() {
-                console.log("running wasm...");
-
-                const wastFile = "demo.wat";
-                const response = await fetch(wastFile);
-                console.log(response);
-
-                const responseText = await response.text();
-                console.log(responseText);
-
-                //const wasm = encoder.encode(responseText);
-                //const wasm = str2ab(responseText);
-                //const wasm = rawStringToBuffer(responseText);
-                const wasm = compile(wastFile, responseText)
-
-                //const buffer = await response.arrayBuffer();
-                //console.log(buffer);
-                //const wasm = buffer;
-
-                const isValid = await WebAssembly.validate(wasm.buffer);
-
-                if (isValid) {
-                    console.log("WASM is valid...");
-                }
-                else {
-                    console.log(wasm.toString(), "is no valid WASM.");
-                    return;
-                }
-
-                //function foreign() {
-                //    console.log("foreign called from WASM.")
-                //    return 7;
-                //}
-
-                //importObj.js.table.set(1, foreign);
-
-                const { module, instance } = 
-                    await WebAssembly.instantiate(wasm.buffer, importObj);
-
-                console.log("WASM fn from JS", importObj.js.table.get(1)());
-
-                instance.exports.f();
-                console.log("g(1,2)", instance.exports.g(1, 2));
-                console.log("from table and memory springs", instance.exports.doIt());
-
-                console.log({ module, instance });
-                console.log("done.")
-            }
-
-            run();
-
-            //fetch("demo.wat")
-            //    .then(response => response.arrayBuffer())
-            //    .then()
-            //    .then(bufferSource => WebAssembly.compile(bufferSource))
-            //    .then(buffer => WebAssembly.instantiate(buffer, importObj))
-            //    .then(({ module, instance }) => instance.export.f());
-        
-        });
+        const obj = await WebAssembly.instantiateStreaming(fetch("./add.wasm"), env);
+        console.log("env", env);
+        console.log("instance.exports", obj.instance.exports);
+        console.assert(3 === obj.instance.exports.add(1, 2));
+        console.assert(43 === obj.instance.exports.getAnswerPlus1());
+        obj.instance.exports.logIt();
+        console.assert(100 === obj.instance.exports.getGlobal());
+        obj.instance.exports.incGlobal();
+        console.assert(101 === obj.instance.exports.getGlobal());
+        obj.instance.exports.writeHi();
 
     </script>
 </body>
